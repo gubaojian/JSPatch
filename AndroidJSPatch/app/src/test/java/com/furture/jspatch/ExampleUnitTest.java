@@ -1,4 +1,4 @@
-package com.furture.jspatch;
+package com.furture.demo;
 
 import org.junit.Test;
 

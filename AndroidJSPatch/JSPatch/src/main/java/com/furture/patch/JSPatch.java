@@ -1,6 +1,8 @@
 package com.furture.patch;
 
 import android.content.Context;
+import android.content.pm.ApplicationInfo;
+import android.os.Build;
 import android.text.TextUtils;
 import android.util.Log;
 
@@ -30,12 +32,28 @@ public class JSPatch {
 
 
     /**
+     * 是否在InstantRun模式，该模式打Patch会有问题。
+     * */
+    private static  boolean isInstantRun = false;
+
+    /**
      *  init patch
      * */
     public static  void  init(Context applicationContext){
         context = applicationContext.getApplicationContext();
         patchEngine = new DuktapeEngine();
         patchEngine.put("JSPatch", JSPatch.class);
+        if(((context.getApplicationContext().getApplicationInfo().flags & ApplicationInfo.FLAG_DEBUGGABLE) != 0)) {
+            ClassLoader classLoader = applicationContext.getClassLoader();
+            while (classLoader != null){
+                String loaderName = classLoader.getClass().getName();
+                if(loaderName.contains("com.android.tools.fd.runtime")){
+                    isInstantRun = true;
+                    break;
+                }
+                classLoader = classLoader.getParent();
+            }
+        }
     }
 
     /**
@@ -70,11 +88,15 @@ public class JSPatch {
             Log.e("JSPatch", "JSPatch AndFix is Not Support");
             return;
         }
+        if(isInstantRun){
+            Log.e("JSPatch", "JSPatch Please Close InstantRun Then Run JSPatch");
+            return;
+        }
         try{
             String key = className + "@" + methodNameWithSign;
             Method  targetMethod = patchedMethods.get(key);
             if(targetMethod == null){
-                Class<?>   targetClass = context.getClassLoader().loadClass(className);
+                Class<?>   targetClass = Class.forName(className, true, context.getClassLoader());
                 String []  methodSign = CALL_METHOD_SIGN_SPLIT_PATTERN.split(methodNameWithSign);
                 String methodName = methodSign[0];
                 String[] argsTypes = null;
@@ -123,6 +145,7 @@ public class JSPatch {
             if(hackMethod == null){
                 throw new RuntimeException("none more hack method available for method " + methodNameWithSign);
             }
+            targetMethod.setAccessible(true);
             HackMethods.putHackCallback(hackMethod.getName(), new Callback(callback, targetMethod));
             if(!patchedMethods.containsKey(key)){
                 AndFix.addReplaceMethod(targetMethod, hackMethod);
